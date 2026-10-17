@@ -8,7 +8,7 @@ from urllib.parse import quote_plus
 
 import undetected_chromedriver as uc
 from bs4 import BeautifulSoup
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -37,11 +37,21 @@ def load_env(path: Path = BASE_DIR / ".env") -> dict[str, str]:
     if not path.exists():
         return {}
     env = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
         if "=" in line and not line.lstrip().startswith("#"):
             key, value = line.split("=", 1)
-            env[key.strip()] = value.strip()
+            env[key.strip()] = value.strip().strip("\"'")
     return env
+
+
+def to_int(text: str) -> int:
+    digits = "".join(ch for ch in text if ch.isdigit())
+    return int(digits) if digits else 0
+
+
+def link_text(cell) -> str:
+    link = cell.find("a")
+    return link.text.strip() if link else ""
 
 
 class RuTracker:
@@ -54,7 +64,10 @@ class RuTracker:
         self.driver = uc.Chrome(options=options, version_main=chrome_version)
 
     def close(self) -> None:
-        self.driver.quit()
+        try:
+            self.driver.quit()
+        except WebDriverException:
+            pass  # окно уже закрыто вручную
 
     def __enter__(self):
         return self
@@ -84,7 +97,11 @@ class RuTracker:
         raise TimeoutError(f"Страница {url} не открылась за {self.timeout} с")
 
     def _login(self, html: str) -> bool:
-        """Заполняет форму входа данными из .env. Пробует один раз за сессию."""
+        """Входит по данным из .env, один раз за сессию.
+
+        Возвращает True, если попытка была (удачная или нет): страницу нужно
+        открыть заново, потому что драйвер остался на login.php.
+        """
         if self._login_tried or "login_username" not in html:
             return False
         if not {"RUTRACKER_LOGIN", "RUTRACKER_PASSWORD"} <= self.env.keys():
@@ -92,8 +109,8 @@ class RuTracker:
         self._login_tried = True
         # на обычных страницах форма скрыта, поэтому входим через login.php
         self.driver.get(f"{FORUM}/login.php")
+        wait = WebDriverWait(self.driver, 20)
         try:
-            wait = WebDriverWait(self.driver, 20)
             username = wait.until(
                 EC.visibility_of_element_located((By.NAME, "login_username"))
             )
@@ -102,13 +119,12 @@ class RuTracker:
                 self.env["RUTRACKER_PASSWORD"]
             )
             self.driver.find_element(By.NAME, "login").click()
-        except WebDriverException as e:
+            wait.until(lambda d: "login_username" not in d.page_source)
+        except (TimeoutException, WebDriverException) as e:
             print(
                 f"Автовход не удался ({type(e).__name__}), войдите вручную в окне",
                 file=sys.stderr,
             )
-            return False
-        time.sleep(3)
         return True
 
     def search(self, query: str, max_pages: int = 1) -> list[dict]:
@@ -124,24 +140,22 @@ class RuTracker:
     @staticmethod
     def _parse_results(html: str) -> list[dict]:
         table = BeautifulSoup(html, "lxml").find("table", id="tor-tbl")
-        if table is None:
-            return []
         results = []
         for row in table.find("tbody").find_all("tr"):
             cells = row.find_all("td")[1:]
-            if not cells:
-                break
+            if len(cells) < 9:  # строка «Не найдено» или служебная
+                continue
             link = cells[2].find("a")
             topic_id = int(link["data-topic_id"])
             results.append(
                 {
                     "topic_id": topic_id,
-                    "title": link.text,
-                    "category": cells[1].find("a").text,
-                    "author": cells[3].find("a").text,
+                    "title": link.text.strip(),
+                    "category": link_text(cells[1]),
+                    "author": link_text(cells[3]),
                     "size_bytes": int(cells[4]["data-ts_text"]),
-                    "seeds": cells[5].text.strip(),
-                    "leeches": cells[6].text.strip(),
+                    "seeds": to_int(cells[5].text),
+                    "leeches": to_int(cells[6].text),
                     "added": int(cells[8]["data-ts_text"]),
                     "url": f"{FORUM}/viewtopic.php?t={topic_id}",
                 }
@@ -150,6 +164,7 @@ class RuTracker:
 
     def download(self, topic_id: int | str, path: str | Path | None = None) -> bytes:
         """Скачивает .torrent через fetch со страницы раздачи и сохраняет в path."""
+        topic_id = int(topic_id)
         self._open(f"{FORUM}/viewtopic.php?t={topic_id}", "dl.php")
         result = self.driver.execute_async_script(
             FETCH_TORRENT_JS, f"{FORUM}/dl.php?t={topic_id}"
@@ -167,6 +182,7 @@ def main() -> None:
     usage = 'usage: rutracker_simple.py search "запрос" | download TOPIC_ID [файл]'
     if len(sys.argv) < 3 or sys.argv[1] not in ("search", "download"):
         sys.exit(usage)
+    sys.stdout.reconfigure(encoding="utf-8")
     command, arg = sys.argv[1:3]
     with RuTracker() as rt:
         if command == "search":
