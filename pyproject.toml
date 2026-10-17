@@ -1,5 +1,5 @@
 [project]
-name = "rutracker-simple"
+name = "rutracker-search"
 version = "0.1.0"
 description = "RuTracker search and .torrent download via undetected Chrome"
 requires-python = ">=3.13"

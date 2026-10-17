@@ -467,7 +467,7 @@ wheels = [
 ]
 
 [[package]]
-name = "rutracker-simple"
+name = "rutracker-search"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

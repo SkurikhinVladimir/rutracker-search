@@ -1,4 +1,4 @@
-# rutracker-simple
+# rutracker-search
 
 Не нашёл готового репозитория, с которым локальный агент мог бы работать с
 RuTracker. Сделал не самый оптимальный, но рабочий способ обойти антибот-защиту
@@ -15,14 +15,14 @@ RuTracker. Сделал не самый оптимальный, но рабоч�
 Используй код напрямую, запуская из папки проекта через `uv run`:
 
 ```python
-from rutracker_simple import RuTracker
+from rutracker_search import RuTracker
 
 with RuTracker() as rt:
     results = rt.search("python")
     rt.download(results[0]["topic_id"], "book.torrent")
 ```
 
-Методы и формат результата смотри в `rutracker_simple.py`. Для серии запросов
+Методы и формат результата смотри в `rutracker_search.py`. Для серии запросов
 создай `RuTracker()` один раз, а не на каждый запрос.
 
 ### Вход и Cloudflare

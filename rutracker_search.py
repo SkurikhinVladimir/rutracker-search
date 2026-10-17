@@ -1,5 +1,6 @@
 """Клиент RuTracker поверх undetected-chromedriver."""
 
+import argparse
 import base64
 import sys
 import time
@@ -179,21 +180,29 @@ class RuTracker:
 
 
 def main() -> None:
-    usage = 'usage: rutracker_simple.py search "запрос" | download TOPIC_ID [файл]'
-    if len(sys.argv) < 3 or sys.argv[1] not in ("search", "download"):
-        sys.exit(usage)
+    parser = argparse.ArgumentParser(description="Поиск и скачивание с RuTracker")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    search = commands.add_parser("search", help="искать раздачи")
+    search.add_argument("query")
+    search.add_argument("--pages", type=int, default=1, help="страниц по 50 раздач")
+
+    download = commands.add_parser("download", help="скачать .torrent")
+    download.add_argument("topic_id", type=int)
+    download.add_argument("path", nargs="?", help="по умолчанию <topic_id>.torrent")
+
+    args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
-    command, arg = sys.argv[1:3]
     with RuTracker() as rt:
-        if command == "search":
-            for r in rt.search(arg):
+        if args.command == "search":
+            for r in rt.search(args.query, max_pages=args.pages):
                 print(
                     f"{r['topic_id']}\t{r['size_bytes'] / 1e9:.2f} GB\t"
                     f"S:{r['seeds']} L:{r['leeches']}\t{r['title']}"
                 )
         else:
-            path = sys.argv[3] if len(sys.argv) > 3 else f"{arg}.torrent"
-            size = len(rt.download(arg, path))
+            path = args.path or f"{args.topic_id}.torrent"
+            size = len(rt.download(args.topic_id, path))
             print(f"{path}: {size} байт")
 
 
