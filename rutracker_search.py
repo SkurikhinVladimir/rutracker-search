@@ -2,6 +2,7 @@
 
 import argparse
 import base64
+import random
 import sys
 import time
 from pathlib import Path
@@ -56,10 +57,17 @@ def link_text(cell) -> str:
 
 
 class RuTracker:
-    def __init__(self, timeout: int = 300, chrome_version: int | None = None):
+    def __init__(
+        self,
+        timeout: int = 300,
+        chrome_version: int | None = None,
+        delay: tuple[float, float] = (4.0, 10.0),
+    ):
         self.timeout = timeout
+        self.delay = delay
         self.env = load_env()
         self._login_tried = False
+        self._last_request = 0.0
         options = uc.ChromeOptions()
         options.add_argument(f"--user-data-dir={PROFILE}")
         self.driver = uc.Chrome(options=options, version_main=chrome_version)
@@ -76,11 +84,19 @@ class RuTracker:
     def __exit__(self, *exc):
         self.close()
 
+    def _pause(self) -> None:
+        """Выдерживает случайную паузу между загрузками страниц."""
+        wait = random.uniform(*self.delay) - (time.time() - self._last_request)
+        if wait > 0:
+            time.sleep(wait)
+        self._last_request = time.time()
+
     def _open(self, url: str, marker: str) -> str:
         """Открывает страницу и ждёт, пока в её HTML появится marker.
 
         Пока marker нет, ждёт ручного прохождения Cloudflare или входа в окне.
         """
+        self._pause()
         self.driver.get(url)
         deadline = time.time() + self.timeout
         warned = False
