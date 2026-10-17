@@ -1,0 +1,6 @@
+[project]
+name = "rutracker-simple"
+version = "0.1.0"
+description = "RuTracker search and .torrent download via undetected Chrome"
+requires-python = ">=3.13"
+dependencies = ["undetected-chromedriver", "selenium", "setuptools", "beautifulsoup4", "lxml"]
